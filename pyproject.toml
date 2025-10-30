@@ -1,0 +1,71 @@
+[project]
+name = "gcp-data-platform-demo"
+version = "0.1.0"
+description = "Google Cloud Platform Data Platform Demo"
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["dependencies"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+]
+core = [
+    "apache-beam[gcp]>=2.54.0",
+    "google-cloud-bigquery>=3.13.0",
+    "google-cloud-storage>=2.14.0",
+    "google-cloud-pubsub>=2.19.0",
+    "google-cloud-functions>=1.16.0",
+    "google-cloud-scheduler>=2.10.0",
+    "pandas>=2.1.0",
+    "numpy>=1.24.0",
+    "pyarrow>=15.0.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "W",  # pycodestyle warnings
+    "C90", # mccabe complexity
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "A",   # flake8-builtins
+    "C4",  # flake8-comprehensions
+    "T10", # flake8-debugger
+    "DJ",  # flake8-django
+    "S",   # flake8-bandit
+    "BLE", # flake8-blind-except
+    "FBT", # flake8-boolean-trap
+    "C90", # mccabe
+]
+
+ignore = [
+    "E501", # Line too long (handled by formatter)
+    "S101", # Use of assert detected (okay in tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["S101"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
