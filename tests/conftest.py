@@ -397,6 +397,116 @@ def mock_api_response_accounts() -> Dict[str, Any]:
     }
 
 
+# CDC-specific fixtures
+@pytest.fixture
+def sample_cdc_insert_event(fake: Faker) -> Dict[str, Any]:
+    """Sample CDC INSERT event."""
+    return {
+        'event_id': 'CDC-ABC123XYZ001',
+        'event_type': 'INSERT',
+        'object_type': 'Account',
+        'record_id': '001000000000001AAA',
+        'event_timestamp': '2025-10-30T15:30:00Z',
+        'changed_fields': [],
+        'before': None,
+        'after': {
+            'id': '001000000000001AAA',
+            'name': fake.company(),
+            'type': 'Customer',
+            'industry': 'Technology',
+            'annual_revenue': 1000000,
+            'created_date': '2025-10-30T15:30:00Z',
+            'last_modified_date': '2025-10-30T15:30:00Z',
+            'system_modstamp': '2025-10-30T15:30:00Z'
+        },
+        'source': 'salesforce_cdc'
+    }
+
+
+@pytest.fixture
+def sample_cdc_update_event(fake: Faker) -> Dict[str, Any]:
+    """Sample CDC UPDATE event."""
+    return {
+        'event_id': 'CDC-ABC123XYZ002',
+        'event_type': 'UPDATE',
+        'object_type': 'Account',
+        'record_id': '001000000000001AAA',
+        'event_timestamp': '2025-10-30T16:00:00Z',
+        'changed_fields': ['name', 'annual_revenue'],
+        'before': {
+            'id': '001000000000001AAA',
+            'name': 'Acme Corp',
+            'type': 'Customer',
+            'industry': 'Technology',
+            'annual_revenue': 1000000,
+            'created_date': '2025-10-30T15:30:00Z',
+            'last_modified_date': '2025-10-30T15:30:00Z',
+            'system_modstamp': '2025-10-30T15:30:00Z'
+        },
+        'after': {
+            'id': '001000000000001AAA',
+            'name': 'Acme Corporation',
+            'type': 'Customer',
+            'industry': 'Technology',
+            'annual_revenue': 1200000,
+            'created_date': '2025-10-30T15:30:00Z',
+            'last_modified_date': '2025-10-30T16:00:00Z',
+            'system_modstamp': '2025-10-30T16:00:00Z'
+        },
+        'source': 'salesforce_cdc'
+    }
+
+
+@pytest.fixture
+def sample_cdc_delete_event(fake: Faker) -> Dict[str, Any]:
+    """Sample CDC DELETE event."""
+    return {
+        'event_id': 'CDC-ABC123XYZ003',
+        'event_type': 'DELETE',
+        'object_type': 'Account',
+        'record_id': '001000000000001AAA',
+        'event_timestamp': '2025-10-30T17:00:00Z',
+        'changed_fields': [],
+        'before': {
+            'id': '001000000000001AAA',
+            'name': 'Acme Corporation',
+            'type': 'Customer',
+            'industry': 'Technology',
+            'annual_revenue': 1200000,
+            'created_date': '2025-10-30T15:30:00Z',
+            'last_modified_date': '2025-10-30T16:00:00Z',
+            'system_modstamp': '2025-10-30T16:00:00Z'
+        },
+        'after': None,
+        'source': 'salesforce_cdc'
+    }
+
+
+@pytest.fixture
+def sample_cdc_events_batch(sample_cdc_insert_event: Dict[str, Any], sample_cdc_update_event: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Sample batch of CDC events."""
+    return [sample_cdc_insert_event, sample_cdc_update_event]
+
+
+@pytest.fixture
+def mock_pubsub_publisher() -> Mock:
+    """Mock Pub/Sub publisher for CDC events."""
+    publisher = Mock()
+    
+    # Mock publish method
+    future = Mock()
+    future.result.return_value = 'message-id-123'
+    publisher.publish.return_value = future
+    
+    # Mock topic path
+    publisher.topic_path.return_value = 'projects/test-project/topics/stream-processing'
+    
+    # Mock stop method
+    publisher.stop.return_value = None
+    
+    return publisher
+
+
 # Cleanup utilities
 @pytest.fixture(autouse=True)
 def cleanup_test_resources():

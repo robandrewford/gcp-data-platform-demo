@@ -1,0 +1,174 @@
+# Salesforce CDC Streaming Pipeline Configuration
+
+# Pub/Sub Configuration
+pubsub:
+  project_id: "${GCP_PROJECT_ID}"
+  topic: "stream-processing"
+  subscription: "salesforce-cdc-subscription"
+  ack_deadline_seconds: 60
+  max_messages: 1000
+
+# Windowing Configuration
+windowing:
+  # Real-time path: immediate processing
+  realtime:
+    window_type: "FIXED"
+    window_duration: "10s"  # 10-second windows for micro-batching
+    allowed_lateness: "600s"  # 10 minutes
+    trigger: "DEFAULT"
+  
+  # History path: hourly batching for SCD Type 2
+  history:
+    window_type: "FIXED"
+    window_duration: "3600s"  # 1 hour windows
+    allowed_lateness: "600s"  # 10 minutes
+    trigger: "ON_TIME"  # Trigger when window closes
+
+# Data Quality Configuration
+data_quality:
+  enabled: true
+  alert_threshold: 0.05  # Alert if 5% of events fail validation
+  
+  validation_rules:
+    - validate_event_type
+    - validate_object_type
+    - validate_record_id_format
+    - validate_timestamp_format
+    - check_null_required_fields
+    - validate_field_types
+    - validate_changed_fields
+    - validate_foreign_keys
+  
+  # Pub/Sub topic for data quality alerts
+  alerts_topic: "data-quality-alerts"
+
+# BigQuery Configuration
+bigquery:
+  project_id: "${GCP_PROJECT_ID}"
+  dataset_id: "${BQ_DATASET}"
+  
+  # Raw tables for real-time ingestion
+  raw_tables:
+    Account: "raw_accounts"
+    Contact: "raw_contacts"
+    Opportunity: "raw_opportunities"
+    Case: "raw_cases"
+  
+  # History tables for SCD Type 2
+  history_tables:
+    Account: "accounts_history"
+    Contact: "contacts_history"
+    Opportunity: "opportunities_history"
+    Case: "cases_history"
+  
+  # Write settings
+  write_disposition: "WRITE_APPEND"
+  create_disposition: "CREATE_IF_NEEDED"
+  
+  # Streaming insert settings
+  streaming:
+    enable_insert_id: true  # Ensure exactly-once delivery
+    skip_invalid_rows: false
+    ignore_unknown_values: false
+
+# Salesforce Objects Configuration
+objects:
+  - name: "Account"
+    enabled: true
+    track_history: true
+  
+  - name: "Contact"
+    enabled: true
+    track_history: true
+  
+  - name: "Opportunity"
+    enabled: true
+    track_history: true
+  
+  - name: "Case"
+    enabled: true
+    track_history: true
+
+# Performance Configuration
+performance:
+  # Dataflow worker settings
+  num_workers: 2
+  max_num_workers: 10
+  machine_type: "n1-standard-4"
+  disk_size_gb: 50
+  
+  # Autoscaling
+  autoscaling_algorithm: "THROUGHPUT_BASED"
+  
+  # Network
+  use_public_ips: false
+  subnetwork: "${SUBNETWORK}"
+  
+  # Region
+  region: "us-central1"
+  
+  # Worker settings
+  worker_harness_container_image: ""  # Use default
+
+# Monitoring Configuration
+monitoring:
+  enable_profiling: true
+  enable_metrics: true
+  log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  
+  # Metrics to track
+  metrics:
+    - events_received
+    - events_processed
+    - events_validated
+    - validation_errors
+    - records_inserted
+    - history_updates
+    - processing_latency
+  
+  # Alert conditions
+  alerts:
+    - name: "high_error_rate"
+      condition: "error_rate > 0.05"
+      notification: "${ALERT_EMAIL}"
+    
+    - name: "processing_lag"
+      condition: "lag_seconds > 300"
+      notification: "${ALERT_EMAIL}"
+
+# Error Handling Configuration
+error_handling:
+  # Dead letter queue for failed events
+  dead_letter_topic: "cdc-dead-letter"
+  max_retry_attempts: 3
+  retry_delay_seconds: 5
+  
+  # Behavior on permanent failures
+  on_permanent_failure: "PUBLISH_TO_DLQ"  # Options: PUBLISH_TO_DLQ, LOG_AND_CONTINUE, FAIL_PIPELINE
+
+# Pipeline Options
+pipeline:
+  # Job name prefix
+  job_name_prefix: "salesforce-cdc"
+  
+  # Staging and temp locations
+  staging_location: "gs://${GCS_BUCKET}/staging"
+  temp_location: "gs://${GCS_BUCKET}/temp"
+  
+  # Pipeline type
+  streaming: true
+  
+  # Save main session for custom transforms
+  save_main_session: true
+  
+  # Enable experiments
+  experiments:
+    - "use_runner_v2"
+    - "enable_streaming_engine"
+
+# Testing Configuration (for local testing)
+testing:
+  enabled: false
+  use_emulator: false
+  emulator_host: "localhost:8085"
+  sample_event_path: "tests/data/sample_cdc_events.json"
