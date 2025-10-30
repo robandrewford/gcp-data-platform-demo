@@ -4,13 +4,26 @@
 
 ### Data Flow Architecture
 ```
-Data Sources → Ingestion Layer → Processing Layer → Storage Layer → Analytics Layer
+Data Sources → Ingestion Layer → Processing Layer → Storage Layer → Transformation Layer → Analytics Layer
 ```
 
-- **Ingestion Layer**: Pub/Sub for real-time, Cloud Storage for batch
-- **Processing Layer**: Dataflow for stream/batch processing, Cloud Functions for event-driven
-- **Storage Layer**: BigQuery for analytical data, Cloud Storage for raw data
+- **Ingestion Layer**: Pub/Sub for real-time (CDC), Cloud Storage for batch (Parquet)
+- **Processing Layer**: Apache Beam (Dataflow) for unified batch/streaming
+- **Storage Layer**: BigQuery for analytical data, Cloud Storage for raw data (Parquet)
+- **Transformation Layer**: Dataform for SQL transformations (dbt model patterns)
 - **Analytics Layer**: Looker Studio/BigQuery ML for visualization and ML
+- **Governance Layer**: Dataplex for catalog, Great Expectations for data quality
+
+### Salesforce Data Architecture
+```
+Salesforce REST API → Apache Beam → Cloud Storage (Parquet) → BigQuery → Dataform → Analytics
+                    ↘ CDC → Pub/Sub → Apache Beam → BigQuery → Dataform → Analytics
+```
+
+- **Batch Path**: Daily/hourly extraction from Salesforce API → Parquet files → BigQuery raw tables
+- **Streaming Path**: Change Data Capture → Pub/Sub → Real-time Beam pipeline → BigQuery streaming inserts
+- **Transformation Path**: Dataform SQLX models adapting dbt Salesforce patterns
+- **Quality Path**: Great Expectations in Beam pipelines → Dataplex governance rules
 
 ### Infrastructure Architecture
 - Terraform-managed GCP resources
@@ -45,6 +58,13 @@ Data Sources → Ingestion Layer → Processing Layer → Storage Layer → Anal
 - **Extract-Load-Transform (ELT)**: BigQuery Native SQL transformations
 - **Streaming ETL**: Pub/Sub → Dataflow Streaming → BigQuery
 - **Change Data Capture**: Cloud SQL → Pub/Sub → Dataflow → BigQuery
+
+### Salesforce-Specific Patterns
+- **Salesforce Batch Extraction**: REST API → Apache Beam → Parquet → BigQuery
+- **Salesforce CDC**: Real-time events → Pub/Sub → Beam → BigQuery streaming
+- **Salesforce History Tracking**: SCD Type 2 patterns in Dataform (dbt adaptation)
+- **Salesforce Relationship Modeling**: Account-Contact-Opportunity joins in Dataform
+- **Salesforce Data Quality**: Great Expectations for Salesforce-specific validations
 
 ### Infrastructure Patterns
 - **Infrastructure as Code**: All GCP resources defined in Terraform

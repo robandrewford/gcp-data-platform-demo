@@ -4,9 +4,11 @@
 
 ### Core GCP Services
 - **BigQuery**: Data warehouse and analytics
-- **Cloud Storage**: Object storage for data lake
-- **Dataflow**: Unified stream and batch data processing
-- **Pub/Sub**: Real-time messaging and event ingestion
+- **Cloud Storage**: Object storage for data lake (Parquet format)
+- **Dataflow**: Unified stream and batch data processing (Apache Beam)
+- **Pub/Sub**: Real-time messaging and event ingestion (CDC)
+- **Dataform**: SQL workflow orchestration and transformations
+- **Dataplex**: Intelligent data fabric for catalog and governance
 - **Cloud Functions**: Serverless event-driven computing
 - **Cloud Composer**: Managed Apache Airflow for workflow orchestration
 - **Cloud Scheduler**: Managed cron job service
@@ -14,6 +16,7 @@
 - **Dataproc**: Managed Spark/Hadoop clusters
 - **Cloud Build**: CI/CD platform
 - **Cloud Monitoring**: Observability and alerting
+- **Cloud Run**: Serverless container platform (for API simulator)
 
 ### Development Technologies
 - **Python 3.9+**: Primary programming language
@@ -48,10 +51,33 @@ gcloud config set project [PROJECT_ID]
 ### Project Structure
 ```
 ├── infrastructure/     # Terraform configurations
+│   ├── dataform.tf     # Dataform repository and resources
+│   ├── dataplex.tf     # Dataplex lake and zones
+│   └── salesforce.tf   # Salesforce-specific BigQuery datasets
 ├── src/               # Python data processing code
+│   ├── salesforce/    # Salesforce-specific modules
+│   │   ├── api_client.py      # REST API client
+│   │   ├── data_generator.py  # Synthetic data generation
+│   │   └── schemas.py         # Salesforce object schemas
+│   └── data_quality/  # Great Expectations suites
+│       └── expectations/       # Data quality rules
 ├── pipelines/         # Dataflow pipeline definitions
+│   ├── salesforce_batch_extract.py    # Batch API extraction
+│   ├── salesforce_batch_load.py       # Parquet → BigQuery
+│   ├── salesforce_streaming_cdc.py    # CDC streaming pipeline
+│   └── data_quality_checks.py         # Great Expectations integration
+├── dataform/          # Dataform SQL transformations
+│   ├── definitions/
+│   │   ├── staging/           # Raw → Staging models
+│   │   ├── marts/             # Analytics tables
+│   │   └── history/           # SCD Type 2 models
+│   └── includes/              # Reusable SQL macros
 ├── scripts/           # Deployment and utility scripts
+│   ├── deploy_dataform.sh    # Dataform deployment
+│   └── setup_dataplex.sh     # Dataplex configuration
 ├── config/            # Configuration files
+│   ├── salesforce_config.yaml # Salesforce object definitions
+│   └── expectations_config.yaml # Great Expectations config
 ├── docs/              # Documentation
 ├── tests/             # Unit and integration tests
 └── memory-bank/       # Project documentation
@@ -84,7 +110,12 @@ gcloud config set project [PROJECT_ID]
 apache-beam[gcp]==2.46.0    # Dataflow processing
 google-cloud-bigquery==3.10.0  # BigQuery client
 google-cloud-storage==2.7.0    # Cloud Storage client
+google-cloud-pubsub==2.19.0     # Pub/Sub client
+google-cloud-dataplex==1.5.0    # Dataplex client
 pandas==1.5.3                  # Data manipulation
+faker==18.9.0                  # Synthetic data generation
+great-expectations==0.15.47     # Data quality validation
+requests==2.31.0                # HTTP client for API simulation
 pytest==7.2.1                  # Testing framework
 ```
 
