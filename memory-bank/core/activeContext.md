@@ -21,6 +21,7 @@
 ## Next Steps
 
 **Immediate Priorities:**
+
 - Set up Dataform repository and Dataplex configuration
 - Create synthetic Salesforce data generator and REST API simulator
 - Implement batch extraction pipeline (Salesforce API → Parquet → BigQuery)
@@ -29,6 +30,7 @@
 - Integrate Great Expectations for data quality validation
 
 **Phase 3 Implementation Sequence:**
+
 1. Infrastructure Setup (Dataform, Dataplex, BigQuery datasets)
 2. Synthetic Salesforce Data Generator & REST API Simulator
 3. Batch Ingestion Pipeline (REST API → Parquet → BigQuery)

@@ -1,0 +1,142 @@
+# Salesforce Batch Extraction Configuration
+
+# API Configuration
+api:
+  base_url: "http://localhost:8080/api/v1"  # Local API simulator endpoint
+  timeout_seconds: 30
+  max_retries: 3
+  retry_delay_seconds: 5
+
+# Salesforce Objects to Extract
+objects:
+  - name: "Account"
+    endpoint: "/accounts"
+    primary_key: "id"
+    batch_size: 1000
+    enabled: true
+    fields:
+      - "id"
+      - "name"
+      - "type"
+      - "industry"
+      - "annual_revenue"
+      - "phone"
+      - "website"
+      - "billing_address"
+      - "shipping_address"
+      - "created_date"
+      - "last_modified_date"
+      - "system_modstamp"
+    
+  - name: "Contact"
+    endpoint: "/contacts"
+    primary_key: "id"
+    batch_size: 2000
+    enabled: true
+    fields:
+      - "id"
+      - "account_id"
+      - "first_name"
+      - "last_name"
+      - "email"
+      - "phone"
+      - "title"
+      - "lead_source"
+      - "created_date"
+      - "last_modified_date"
+      - "system_modstamp"
+    
+  - name: "Opportunity"
+    endpoint: "/opportunities"
+    primary_key: "id"
+    batch_size: 1000
+    enabled: true
+    fields:
+      - "id"
+      - "account_id"
+      - "name"
+      - "stage_name"
+      - "type"
+      - "lead_source"
+      - "amount"
+      - "probability"
+      - "close_date"
+      - "is_won"
+      - "is_closed"
+      - "created_date"
+      - "last_modified_date"
+      - "system_modstamp"
+    
+  - name: "Case"
+    endpoint: "/cases"
+    primary_key: "id"
+    batch_size: 1000
+    enabled: true
+    fields:
+      - "id"
+      - "account_id"
+      - "contact_id"
+      - "subject"
+      - "description"
+      - "status"
+      - "origin"
+      - "priority"
+      - "is_escalated"
+      - "is_closed"
+      - "closed_date"
+      - "created_date"
+      - "last_modified_date"
+      - "system_modstamp"
+
+# Cloud Storage Configuration
+storage:
+  bucket_name: "${GCS_BUCKET}"  # Environment variable
+  raw_data_path: "salesforce/raw"
+  processed_data_path: "salesforce/processed"
+  archive_path: "salesforce/archive"
+  parquet_compression: "snappy"  # Options: snappy, gzip, lz4, zstd
+  partition_by_date: true
+
+# BigQuery Configuration
+bigquery:
+  project_id: "${GCP_PROJECT_ID}"
+  dataset_id: "${BQ_DATASET}"
+  raw_table_prefix: "raw_"
+  staging_table_prefix: "stg_"
+  write_disposition: "WRITE_APPEND"  # Options: WRITE_TRUNCATE, WRITE_APPEND, WRITE_EMPTY
+  create_disposition: "CREATE_IF_NEEDED"
+
+# Data Quality Configuration
+data_quality:
+  enabled: true
+  validation_rules:
+    - check_null_primary_keys: true
+    - check_duplicate_ids: true
+    - validate_timestamps: true
+    - validate_foreign_keys: true
+  error_threshold_percent: 5  # Fail job if error rate exceeds this
+
+# Scheduling Configuration
+schedule:
+  # Cron format: "minute hour day month day_of_week"
+  daily_full_extract: "0 2 * * *"  # 2 AM daily
+  hourly_incremental: "0 * * * *"  # Every hour
+  timezone: "America/Los_Angeles"
+
+# Monitoring Configuration
+monitoring:
+  enable_profiling: true
+  enable_metrics: true
+  log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  alert_on_failure: true
+  alert_email: "${ALERT_EMAIL}"
+
+# Performance Configuration
+performance:
+  num_workers: 2
+  max_num_workers: 10
+  machine_type: "n1-standard-4"
+  disk_size_gb: 50
+  use_public_ips: false
+  subnetwork: "${SUBNETWORK}"
+  region: "us-central1"

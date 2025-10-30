@@ -27,9 +27,9 @@
 
 ### Phase 3: Salesforce Data Processing Examples
 
-- [ ] Infrastructure Setup (Dataform, Dataplex, BigQuery datasets)
-- [ ] Synthetic Salesforce Data Generator & REST API Simulator
-- [ ] Batch Ingestion Pipeline (REST API → Parquet → BigQuery)
+- [x] Infrastructure Setup (Dataform, Dataplex, BigQuery datasets)
+- [x] Synthetic Salesforce Data Generator & REST API Simulator
+- [x] Batch Ingestion Pipeline (REST API → Parquet → BigQuery)
 - [ ] Streaming CDC Pipeline (Pub/Sub → BigQuery)
 - [ ] Dataform Transformations (dbt Salesforce models adaptation)
 - [ ] Data Quality Integration (Great Expectations + Dataplex)
