@@ -6,13 +6,13 @@ This module provides common fixtures and utilities for testing across all test m
 
 import os
 import tempfile
-from unittest.mock import Mock, MagicMock
-from typing import Dict, Any, Generator, List
+from collections.abc import Generator
+from typing import Any
+from unittest.mock import Mock
+
 import pytest
-from google.cloud import bigquery
-from google.cloud import pubsub_v1
-from google.cloud import storage
 from faker import Faker
+from google.cloud import bigquery, pubsub_v1, storage
 
 
 @pytest.fixture(scope="session")
@@ -57,25 +57,25 @@ def mock_bigquery_client(test_project_id: str, test_dataset: str) -> Mock:
     """Mock BigQuery client."""
     client = Mock(spec=bigquery.Client)
     client.project = test_project_id
-    
+
     # Mock dataset reference
     dataset_ref = Mock()
     dataset_ref.dataset_id = test_dataset
     dataset_ref.project = test_project_id
     client.dataset.return_value = dataset_ref
-    
+
     # Mock table reference
     table_ref = Mock()
     table_ref.table_id = "test_table"
     table_ref.dataset_id = test_dataset
     table_ref.project = test_project_id
     dataset_ref.table.return_value = table_ref
-    
+
     # Mock query job
     query_job = Mock()
     query_job.result.return_value = []
     client.query.return_value = query_job
-    
+
     return client
 
 
@@ -83,18 +83,18 @@ def mock_bigquery_client(test_project_id: str, test_dataset: str) -> Mock:
 def mock_pubsub_client(test_project_id: str, test_topic: str) -> Mock:
     """Mock Pub/Sub client."""
     client = Mock(spec=pubsub_v1.PublisherClient)
-    
+
     # Mock topic path
     topic_path = f"projects/{test_project_id}/topics/{test_topic}"
     client.topic_path.return_value = topic_path
-    
+
     # Mock subscription path
     subscription_path = f"projects/{test_project_id}/subscriptions/test-subscription"
     client.subscription_path.return_value = subscription_path
-    
+
     # Mock publish
     client.publish.return_value = Mock(future=Mock(result="message-id"))
-    
+
     return client
 
 
@@ -103,21 +103,21 @@ def mock_storage_client(test_project_id: str, test_bucket: str) -> Mock:
     """Mock Cloud Storage client."""
     client = Mock(spec=storage.Client)
     client.project = test_project_id
-    
+
     # Mock bucket
     bucket = Mock()
     bucket.name = test_bucket
     client.bucket.return_value = bucket
-    
+
     # Mock blob
     blob = Mock()
     bucket.blob.return_value = blob
-    
+
     return client
 
 
 @pytest.fixture
-def sample_salesforce_account(fake: Faker) -> Dict[str, Any]:
+def sample_salesforce_account(fake: Faker) -> dict[str, Any]:
     """Sample Salesforce account record for testing."""
     return {
         "id": "001000000000001AAA",
@@ -150,7 +150,7 @@ def sample_salesforce_account(fake: Faker) -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_salesforce_contact(fake: Faker, sample_salesforce_account: Dict[str, Any]) -> Dict[str, Any]:
+def sample_salesforce_contact(fake: Faker, sample_salesforce_account: dict[str, Any]) -> dict[str, Any]:
     """Sample Salesforce contact record for testing."""
     return {
         "id": "003000000000001AAA",
@@ -170,7 +170,7 @@ def sample_salesforce_contact(fake: Faker, sample_salesforce_account: Dict[str, 
 
 
 @pytest.fixture
-def sample_salesforce_opportunity(fake: Faker, sample_salesforce_account: Dict[str, Any]) -> Dict[str, Any]:
+def sample_salesforce_opportunity(fake: Faker, sample_salesforce_account: dict[str, Any]) -> dict[str, Any]:
     """Sample Salesforce opportunity record for testing."""
     return {
         "id": "006000000000001AAA",
@@ -193,7 +193,7 @@ def sample_salesforce_opportunity(fake: Faker, sample_salesforce_account: Dict[s
 
 
 @pytest.fixture
-def sample_salesforce_case(fake: Faker, sample_salesforce_account: Dict[str, Any], sample_salesforce_contact: Dict[str, Any]) -> Dict[str, Any]:
+def sample_salesforce_case(fake: Faker, sample_salesforce_account: dict[str, Any], sample_salesforce_contact: dict[str, Any]) -> dict[str, Any]:
     """Sample Salesforce case record for testing."""
     return {
         "id": "500000000000001AAA",
@@ -216,7 +216,7 @@ def sample_salesforce_case(fake: Faker, sample_salesforce_account: Dict[str, Any
 
 
 @pytest.fixture
-def sample_pubsub_message() -> Dict[str, Any]:
+def sample_pubsub_message() -> dict[str, Any]:
     """Sample Pub/Sub message for testing."""
     return {
         "data": '{"test": "message"}',
@@ -239,7 +239,7 @@ def mock_environment_variables(monkeypatch: pytest.MonkeyPatch, test_project_id:
 
 
 # Test data generation helpers
-def generate_test_accounts(count: int = 10, fake: Faker = Faker()) -> List[Dict[str, Any]]:
+def generate_test_accounts(count: int = 10, fake: Faker = Faker()) -> list[dict[str, Any]]:
     """Generate test account records."""
     accounts = []
     for i in range(count):
@@ -260,11 +260,11 @@ def generate_test_accounts(count: int = 10, fake: Faker = Faker()) -> List[Dict[
     return accounts
 
 
-def generate_test_contacts(count: int = 20, account_ids: List[str] | None = None, fake: Faker = Faker()) -> List[Dict[str, Any]]:
+def generate_test_contacts(count: int = 20, account_ids: list[str] | None = None, fake: Faker = Faker()) -> list[dict[str, Any]]:
     """Generate test contact records."""
     if account_ids is None:
         account_ids = [f"00100000000000{i:03d}AAA" for i in range(5)]
-    
+
     contacts = []
     for i in range(count):
         contacts.append({
@@ -293,7 +293,7 @@ def assert_salesforce_id_format(record_id: str, prefix: str) -> None:
     assert all(c.isalnum() for c in record_id)
 
 
-def assert_required_fields(record: Dict[str, Any], required_fields: List[str]) -> None:
+def assert_required_fields(record: dict[str, Any], required_fields: list[str]) -> None:
     """Assert that all required fields are present and non-null."""
     for field in required_fields:
         assert field in record, f"Missing required field: {field}"
@@ -310,7 +310,7 @@ def assert_timestamp_format(timestamp: str) -> None:
 
 # Pipeline-specific fixtures
 @pytest.fixture
-def sample_config_dict() -> Dict[str, Any]:
+def sample_config_dict() -> dict[str, Any]:
     """Sample pipeline configuration dictionary."""
     return {
         'api': {
@@ -353,7 +353,7 @@ def sample_config_dict() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_config_yaml(temp_dir: str, sample_config_dict: Dict[str, Any]) -> str:
+def sample_config_yaml(temp_dir: str, sample_config_dict: dict[str, Any]) -> str:
     """Create a temporary YAML config file."""
     import yaml
     config_path = f"{temp_dir}/test_config.yaml"
@@ -363,7 +363,7 @@ def sample_config_yaml(temp_dir: str, sample_config_dict: Dict[str, Any]) -> str
 
 
 @pytest.fixture
-def mock_api_response_accounts() -> Dict[str, Any]:
+def mock_api_response_accounts() -> dict[str, Any]:
     """Mock API response for accounts endpoint."""
     return {
         'records': [
@@ -399,7 +399,7 @@ def mock_api_response_accounts() -> Dict[str, Any]:
 
 # CDC-specific fixtures
 @pytest.fixture
-def sample_cdc_insert_event(fake: Faker) -> Dict[str, Any]:
+def sample_cdc_insert_event(fake: Faker) -> dict[str, Any]:
     """Sample CDC INSERT event."""
     return {
         'event_id': 'CDC-ABC123XYZ001',
@@ -424,7 +424,7 @@ def sample_cdc_insert_event(fake: Faker) -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_cdc_update_event(fake: Faker) -> Dict[str, Any]:
+def sample_cdc_update_event(fake: Faker) -> dict[str, Any]:
     """Sample CDC UPDATE event."""
     return {
         'event_id': 'CDC-ABC123XYZ002',
@@ -458,7 +458,7 @@ def sample_cdc_update_event(fake: Faker) -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_cdc_delete_event(fake: Faker) -> Dict[str, Any]:
+def sample_cdc_delete_event(fake: Faker) -> dict[str, Any]:
     """Sample CDC DELETE event."""
     return {
         'event_id': 'CDC-ABC123XYZ003',
@@ -483,7 +483,7 @@ def sample_cdc_delete_event(fake: Faker) -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_cdc_events_batch(sample_cdc_insert_event: Dict[str, Any], sample_cdc_update_event: Dict[str, Any]) -> List[Dict[str, Any]]:
+def sample_cdc_events_batch(sample_cdc_insert_event: dict[str, Any], sample_cdc_update_event: dict[str, Any]) -> list[dict[str, Any]]:
     """Sample batch of CDC events."""
     return [sample_cdc_insert_event, sample_cdc_update_event]
 
@@ -492,18 +492,18 @@ def sample_cdc_events_batch(sample_cdc_insert_event: Dict[str, Any], sample_cdc_
 def mock_pubsub_publisher() -> Mock:
     """Mock Pub/Sub publisher for CDC events."""
     publisher = Mock()
-    
+
     # Mock publish method
     future = Mock()
     future.result.return_value = 'message-id-123'
     publisher.publish.return_value = future
-    
+
     # Mock topic path
     publisher.topic_path.return_value = 'projects/test-project/topics/stream-processing'
-    
+
     # Mock stop method
     publisher.stop.return_value = None
-    
+
     return publisher
 
 

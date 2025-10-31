@@ -6,19 +6,19 @@ used throughout the data platform for consistency.
 
 Usage:
     from src.salesforce.schemas import SalesforceSchemas
-    
+
     schemas = SalesforceSchemas()
     account_schema = schemas.get_account_schema()
     contact_schema = schemas.get_contact_schema()
 """
 
-from typing import Dict, List, Any
 from datetime import datetime
+from typing import Any
 
 
 class SalesforceSchemas:
     """Salesforce object schemas and validation rules."""
-    
+
     def __init__(self):
         """Initialize schema definitions."""
         # Field mappings for different objects
@@ -83,7 +83,7 @@ class SalesforceSchemas:
                 'system_modstamp': 'SystemModstamp'
             }
         }
-        
+
         # Validation rules
         self.validation_rules = {
             'account': self._get_account_validation_rules(),
@@ -91,8 +91,8 @@ class SalesforceSchemas:
             'opportunity': self._get_opportunity_validation_rules(),
             'case': self._get_case_validation_rules()
         }
-    
-    def get_account_schema(self) -> Dict[str, Any]:
+
+    def get_account_schema(self) -> dict[str, Any]:
         """Get Salesforce Account object schema."""
         return {
             'object_name': 'Account',
@@ -115,8 +115,8 @@ class SalesforceSchemas:
             },
             'validation_rules': self.validation_rules['account']
         }
-    
-    def get_contact_schema(self) -> Dict[str, Any]:
+
+    def get_contact_schema(self) -> dict[str, Any]:
         """Get Salesforce Contact object schema."""
         return {
             'object_name': 'Contact',
@@ -138,8 +138,8 @@ class SalesforceSchemas:
             },
             'validation_rules': self.validation_rules['contact']
         }
-    
-    def get_opportunity_schema(self) -> Dict[str, Any]:
+
+    def get_opportunity_schema(self) -> dict[str, Any]:
         """Get Salesforce Opportunity object schema."""
         return {
             'object_name': 'Opportunity',
@@ -164,8 +164,8 @@ class SalesforceSchemas:
             },
             'validation_rules': self.validation_rules['opportunity']
         }
-    
-    def get_case_schema(self) -> Dict[str, Any]:
+
+    def get_case_schema(self) -> dict[str, Any]:
         """Get Salesforce Case object schema."""
         return {
             'object_name': 'Case',
@@ -190,8 +190,8 @@ class SalesforceSchemas:
             },
             'validation_rules': self.validation_rules['case']
         }
-    
-    def get_history_schema(self) -> Dict[str, Any]:
+
+    def get_history_schema(self) -> dict[str, Any]:
         """Get Salesforce History object schema for SCD Type 2."""
         return {
             'object_name': 'Account_History',
@@ -219,8 +219,8 @@ class SalesforceSchemas:
             },
             'validation_rules': self._get_history_validation_rules()
         }
-    
-    def _get_account_validation_rules(self) -> List[Dict[str, Any]]:
+
+    def _get_account_validation_rules(self) -> list[dict[str, Any]]:
         """Get account validation rules."""
         return [
             {
@@ -249,8 +249,8 @@ class SalesforceSchemas:
                 'rule': lambda record: self._validate_website(record.get('website', ''))
             }
         ]
-    
-    def _get_contact_validation_rules(self) -> List[Dict[str, Any]]:
+
+    def _get_contact_validation_rules(self) -> list[dict[str, Any]]:
         """Get contact validation rules."""
         return [
             {
@@ -262,7 +262,7 @@ class SalesforceSchemas:
                 'name': 'valid_name_format',
                 'description': 'First and last name must be valid',
                 'rule': lambda record: bool(
-                    record.get('first_name', '').strip() and 
+                    record.get('first_name', '').strip() and
                     record.get('last_name', '').strip()
                 )
             },
@@ -276,8 +276,8 @@ class SalesforceSchemas:
                 ]
             }
         ]
-    
-    def _get_opportunity_validation_rules(self) -> List[Dict[str, Any]]:
+
+    def _get_opportunity_validation_rules(self) -> list[dict[str, Any]]:
         """Get opportunity validation rules."""
         return [
             {
@@ -304,8 +304,8 @@ class SalesforceSchemas:
                 )
             }
         ]
-    
-    def _get_case_validation_rules(self) -> List[Dict[str, Any]]:
+
+    def _get_case_validation_rules(self) -> list[dict[str, Any]]:
         """Get case validation rules."""
         return [
             {
@@ -329,8 +329,8 @@ class SalesforceSchemas:
                 'rule': lambda record: record.get('origin') in ['Web', 'Email', 'Phone', 'Chat', 'Social Media']
             }
         ]
-    
-    def _get_history_validation_rules(self) -> List[Dict[str, Any]]:
+
+    def _get_history_validation_rules(self) -> list[dict[str, Any]]:
         """Get history validation rules."""
         return [
             {
@@ -352,7 +352,7 @@ class SalesforceSchemas:
                 'rule': lambda record: record.get('is_current') == (record.get('valid_to') is None)
             }
         ]
-    
+
     def _validate_phone(self, phone: str) -> bool:
         """Validate phone number format."""
         if not phone:
@@ -361,27 +361,27 @@ class SalesforceSchemas:
         import re
         phone_pattern = r'^[\+]?[1-9]\d{1,14}$'
         return bool(re.match(phone_pattern, phone))
-    
+
     def _validate_website(self, website: str) -> bool:
         """Validate website URL format."""
         if not website:
             return True
         return website.startswith(('http://', 'https://'))
-    
-    def validate_record(self, record: Dict[str, Any], object_type: str) -> Dict[str, Any]:
+
+    def validate_record(self, record: dict[str, Any], object_type: str) -> dict[str, Any]:
         """Validate a record against its schema."""
         schema = getattr(self, f'get_{object_type}_schema')()
         validation_result = {
             'valid': True,
             'errors': []
         }
-        
+
         # Check required fields
         for field in schema['required_fields']:
             if not record.get(field):
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Missing required field: {field}")
-        
+
         # Check field types
         for field, field_value in record.items():
             if field in schema['field_types']:
@@ -389,7 +389,7 @@ class SalesforceSchemas:
                 if not self._validate_field_type(field_value, expected_type):
                     validation_result['valid'] = False
                     validation_result['errors'].append(f"Invalid type for {field}: expected {expected_type}")
-        
+
         # Apply validation rules
         for rule in schema['validation_rules']:
             try:
@@ -399,14 +399,14 @@ class SalesforceSchemas:
             except Exception as e:
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Validation error: {e}")
-        
+
         return validation_result
-    
+
     def _validate_field_type(self, value: Any, expected_type: str) -> bool:
         """Validate field type."""
         if value is None:
             return True
-        
+
         type_validators = {
             'STRING': lambda v: isinstance(v, str),
             'NUMERIC': lambda v: isinstance(v, (int, float)),
@@ -415,7 +415,7 @@ class SalesforceSchemas:
             'DATE': lambda v: isinstance(v, (datetime, str)),
             'JSON': lambda v: isinstance(v, (dict, str))
         }
-        
+
         validator = type_validators.get(expected_type)
         return validator(value) if validator else False
 
@@ -423,7 +423,7 @@ class SalesforceSchemas:
 def main():
     """Test schema validation."""
     schemas = SalesforceSchemas()
-    
+
     # Test with sample data
     sample_account = {
         'id': '001000000000001',
@@ -434,10 +434,10 @@ def main():
         'last_modified_date': datetime.now().isoformat(),
         'system_modstamp': datetime.now().isoformat()
     }
-    
+
     result = schemas.validate_record(sample_account, 'account')
     print(f"Account validation result: {result}")
-    
+
     # Test invalid record
     invalid_account = {
         'id': '001000000000002',
@@ -446,7 +446,7 @@ def main():
         'last_modified_date': datetime.now().isoformat(),
         'system_modstamp': datetime.now().isoformat()
     }
-    
+
     result = schemas.validate_record(invalid_account, 'account')
     print(f"Invalid account validation result: {result}")
 

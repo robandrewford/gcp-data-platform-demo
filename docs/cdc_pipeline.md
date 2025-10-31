@@ -2,348 +2,416 @@
 
 ## Overview
 
-The Salesforce CDC (Change Data Capture) streaming pipeline processes real-time change events from Salesforce objects, performs data quality validation, and writes to BigQuery with support for SCD Type 2 history tracking.
+The Salesforce CDC (Change Data Capture) streaming pipeline provides real-time data ingestion and processing of Salesforce data changes. It implements a dual-path architecture:
+
+1. **Real-time Path**: Immediate ingestion of CDC events to BigQuery raw tables (10-second micro-batches)
+2. **History Path**: Hourly batch processing for SCD Type 2 history tracking (1-hour windows)
 
 ## Architecture
 
 ```
-CDC Events → Pub/Sub → Apache Beam Pipeline → BigQuery
-                              ↓
-                       Data Quality Validation
-                              ↓
-                    ┌─────────┴─────────┐
-                    ↓                   ↓
-            Valid Events         Invalid Events
-                    ↓                   ↓
-            BigQuery Tables      Alert Topic
-            (Real-time)
-                    ↓
-            History Tables
-            (Hourly Batch - SCD Type 2)
+Salesforce CDC Events
+        ↓
+    Pub/Sub Topic (stream-processing)
+        ↓
+    Pub/Sub Subscription
+        ↓
+┌───────────────────────┐
+│  Parse & Validate     │  ← CDC Event Parser
+│  CDC Events           │  ← CDC Validator
+└───────────────────────┘
+        ↓
+    ┌────────┴────────┐
+    ↓                 ↓
+[Valid Events]   [Invalid Events]
+    ↓                 ↓
+Route by Object  Data Quality
+Type (A/C/O/C)   Alerts Topic
+    ↓
+┌───────────┬───────────┐
+│ Real-time │  History  │
+│   Path    │   Path    │
+└───────────┴───────────┘
+    ↓            ↓
+10-sec        1-hour
+Windows      Windows
+    ↓            ↓
+BigQuery      SCD Type 2
+Raw Tables   Processing
+              ↓
+         History Tables
 ```
 
 ## Components
 
-### 1. CDC Event Simulator
-**File:** `src/salesforce/cdc_event_simulator.py`
+### 1. CDC Event Parser (`ParseCDCEvent`)
+- Parses JSON CDC events from Pub/Sub messages
+- Handles malformed JSON gracefully with error logging
+- Decodes message bytes to JSON objects
 
-Generates synthetic CDC events for testing:
-- INSERT, UPDATE, DELETE operations
-- Before/after snapshots
-- Changed fields tracking
-- Realistic Salesforce data
+### 2. CDC Validator (`ValidateCDCEvent`)
+- Validates event structure and data quality
+- Checks:
+  - Event type (INSERT/UPDATE/DELETE)
+  - Object type (Account/Contact/Opportunity/Case)
+  - Record ID format
+  - Timestamp format and reasonableness
+  - Required field presence
+  - Field data types
+  - Changed fields (for UPDATE events)
+  - Foreign key references
+- Routes events to valid/invalid outputs
+- Tracks validation statistics
 
-**Usage:**
-```python
-from src.salesforce.cdc_event_simulator import CDCEventSimulator
+### 3. Record Extractor (`ExtractRecordForBigQuery`)
+- Extracts record data from CDC events
+- For INSERT/UPDATE: uses 'after' state
+- For DELETE: uses 'before' state
+- Adds metadata:
+  - `ingestion_timestamp`
+  - `source` (salesforce_cdc)
+  - `_cdc_event_id`
+  - `_cdc_event_type`
+  - `_cdc_event_timestamp`
+- Serializes complex fields (dict/list) to JSON strings
 
-simulator = CDCEventSimulator()
-simulator.preload_existing_records('Account', 50)
-events = simulator.generate_cdc_events('Account', 100)
-```
+### 4. Object Type Router (`RouteByObjectType`)
+- Routes events to object-specific processing paths
+- Supports: Account, Contact, Opportunity, Case
+- Logs warnings for unknown object types
 
-**CLI:**
-```bash
-python -m src.salesforce.cdc_event_simulator \
-    --object-type Account \
-    --count 100 \
-    --preload 50 \
-    --output cdc_events.json
-```
+### 5. SCD Type 2 Processor (`ProcessSCDType2Changes`)
+- Processes hourly batches of CDC events
+- Implements Slowly Changing Dimension Type 2:
+  - Maintains full history of record changes
+  - Tracks `valid_from` and `valid_to` timestamps
+  - Sets `is_current` flag for active records
+  - Records change types and changed fields
+- Groups events by record ID
+- Sorts chronologically for correct processing
+- Closes previous records before inserting new versions
 
-### 2. CDC Event Publisher
-**File:** `src/salesforce/cdc_publisher.py`
-
-Publishes CDC events to Pub/Sub:
-- Batch publishing support
-- Rate limiting
-- Retry logic
-- Statistics tracking
-
-**Usage:**
-```python
-from src.salesforce.cdc_publisher import CDCEventPublisher
-
-publisher = CDCEventPublisher(
-    project_id='my-project',
-    topic_name='stream-processing'
-)
-publisher.publish_events(events)
-```
-
-**CLI:**
-```bash
-python -m src.salesforce.cdc_publisher \
-    --project-id my-project \
-    --topic-name stream-processing \
-    --object-type Account \
-    --count 100 \
-    --continuous
-```
-
-### 3. CDC Validators
-**File:** `pipelines/utils/cdc_validators.py`
-
-Data quality validation rules:
-- Event type validation (INSERT/UPDATE/DELETE)
-- Object type validation (Account/Contact/Opportunity/Case)
-- Record ID format validation (Salesforce ID pattern)
-- Timestamp format validation (ISO 8601)
-- Null checks for required fields
-- Field type validation
-- Changed fields validation (UPDATE events)
-- Foreign key validation
-
-**Usage:**
-```python
-from pipelines.utils.cdc_validators import CDCValidator
-
-validator = CDCValidator(alert_threshold=0.05)
-is_valid, errors = validator.validate_event(event)
-```
-
-### 4. CDC Event Parser
-**File:** `pipelines/utils/cdc_event_parser.py`
-
-Parses and extracts data from CDC events:
-- Pub/Sub message parsing
-- Record extraction for BigQuery
-- History record extraction
-- Field normalization
-
-**Usage:**
-```python
-from pipelines.utils.cdc_event_parser import CDCEventParser
-
-parser = CDCEventParser()
-event = parser.parse_pubsub_message(message)
-record = parser.extract_record_for_bigquery(event)
-```
-
-### 5. SCD Type 2 Handler
-**File:** `pipelines/utils/scd_type2_handler.py`
-
-Implements Slowly Changing Dimension Type 2 pattern:
-- Change detection
-- History table updates
-- valid_from/valid_to management
-- is_current flag tracking
-- Hourly batch processing
-
-**Usage:**
-```python
-from pipelines.utils.scd_type2_handler import SCDType2Handler
-from google.cloud import bigquery
-
-client = bigquery.Client()
-handler = SCDType2Handler(client, project_id, dataset_id)
-stats = handler.process_hourly_changes(events, 'Account')
-```
-
-### 6. Streaming Pipeline
-**File:** `pipelines/salesforce_streaming_cdc.py`
-
-Main Apache Beam streaming pipeline:
-- Reads from Pub/Sub
-- Validates events
-- Routes by object type
-- Real-time BigQuery writes
-- Data quality alerting
+### 6. Data Quality Alert Generator (`CreateDataQualityAlert`)
+- Creates structured alerts for validation failures
+- Alert format:
+  ```json
+  {
+    "alert_type": "data_quality_violation",
+    "severity": "ERROR",
+    "timestamp": "2024-01-01T12:00:00Z",
+    "event_id": "CDC-ABC123...",
+    "object_type": "Account",
+    "record_id": "001...",
+    "validation_errors": ["error1", "error2"],
+    "event_data": { ... }
+  }
+  ```
+- Publishes to `data-quality-alerts` Pub/Sub topic
 
 ## Configuration
 
-### CDC Pipeline Configuration
-**File:** `config/salesforce_cdc_config.yaml`
+### Environment Variables
 
-Key configuration sections:
-- **Pub/Sub:** Topic, subscription, message settings
-- **Windowing:** Real-time (10s) and history (1h) windows
-- **Data Quality:** Validation rules, alert threshold
-- **BigQuery:** Tables, write settings, streaming config
-- **Performance:** Worker settings, autoscaling
-- **Monitoring:** Metrics, alerts, log levels
-- **Error Handling:** Dead letter queue, retry logic
+Required variables (set in `infrastructure/<env>/.env`):
 
-## Data Flow
+```bash
+GCP_PROJECT_ID=your-project-id
+GCP_REGION=us-central1
+BQ_DATASET=salesforce_data
+GCS_BUCKET=your-dataflow-bucket
+```
 
-### Real-time Path
+### Pipeline Configuration
 
-1. **Event Reception**
-   - CDC events arrive via Pub/Sub
-   - 10-second windowing for micro-batching
+Edit `config/salesforce_cdc_config.yaml`:
 
-2. **Validation**
-   - Type checks (event_type, object_type)
-   - Null checks (required fields)
-   - Format validation (timestamps, IDs)
-   - Foreign key validation
+#### Windowing
+```yaml
+windowing:
+  realtime:
+    window_duration: "10s"    # Micro-batch size
+    allowed_lateness: "600s"  # 10 minutes
+  history:
+    window_duration: "3600s"  # 1 hour for SCD Type 2
+    allowed_lateness: "600s"
+```
 
-3. **Routing**
-   - Events routed by object_type
-   - Separate processing per object
+#### Data Quality
+```yaml
+data_quality:
+  enabled: true
+  alert_threshold: 0.05  # Alert if >5% events fail
+  validation_rules:
+    - validate_event_type
+    - validate_object_type
+    - validate_record_id_format
+    # ... more rules
+```
 
-4. **BigQuery Write**
-   - Streaming inserts to raw tables
-   - Metadata addition (ingestion_timestamp, source, etc.)
-   - Complex fields converted to JSON
-
-### History Path (Hourly)
-
-1. **Event Collection**
-   - 1-hour fixed windows
-   - Events grouped by record_id
-
-2. **Change Detection**
-   - Compare before/after states
-   - Identify changed fields
-   - Skip unchanged records
-
-3. **History Updates**
-   - Close current records (set valid_to, is_current=false)
-   - Insert new history records (valid_from=event_timestamp)
-   - Maintain audit trail
-
-## CDC Event Format
-
-```json
-{
-  "event_id": "CDC-ABC123XYZ789",
-  "event_type": "UPDATE",
-  "object_type": "Account",
-  "record_id": "001XXXXXXXXXXXXXXX",
-  "event_timestamp": "2025-10-30T15:30:00Z",
-  "changed_fields": ["name", "annual_revenue"],
-  "before": {
-    "id": "001XXXXXXXXXXXXXXX",
-    "name": "Acme Corp",
-    "annual_revenue": 1000000,
-    "created_date": "2025-01-15T10:00:00Z",
-    "last_modified_date": "2025-10-30T15:29:00Z"
-  },
-  "after": {
-    "id": "001XXXXXXXXXXXXXXX",
-    "name": "Acme Corporation",
-    "annual_revenue": 1200000,
-    "created_date": "2025-01-15T10:00:00Z",
-    "last_modified_date": "2025-10-30T15:30:00Z"
-  },
-  "source": "salesforce_cdc"
-}
+#### BigQuery Tables
+```yaml
+bigquery:
+  raw_tables:
+    Account: "raw_accounts"
+    Contact: "raw_contacts"
+    Opportunity: "raw_opportunities"
+    Case: "raw_cases"
+  
+  history_tables:
+    Account: "accounts_history"
+    Contact: "contacts_history"
+    Opportunity: "opportunities_history"
+    Case: "cases_history"
 ```
 
 ## Deployment
 
 ### Prerequisites
 
-1. **GCP Resources**
-   - Pub/Sub topic: `stream-processing`
-   - Pub/Sub subscription: `salesforce-cdc-subscription`
-   - BigQuery dataset with raw and history tables
-   - Cloud Storage bucket for staging/temp
-   - VPC subnetwork
-   - Service account with permissions
-
-2. **Environment Variables**
+1. Install dependencies:
    ```bash
-   export GCP_PROJECT_ID="my-project"
-   export BQ_DATASET="salesforce_raw"
-   export GCS_BUCKET="my-dataflow-bucket"
-   export SUBNETWORK="projects/my-project/regions/us-central1/subnetworks/my-subnet"
+   uv sync
    ```
 
-### Deploy Pipeline
+2. Ensure GCP resources exist:
+   - Pub/Sub topics and subscriptions
+   - BigQuery dataset
+   - GCS bucket for staging/temp
+   - Service account with appropriate permissions
+
+### Deploy to Development
 
 ```bash
-# Deploy to development
 ./scripts/deploy_cdc_pipeline.sh dev
+```
 
-# Deploy to production
+### Deploy to Production
+
+```bash
 ./scripts/deploy_cdc_pipeline.sh prod
 ```
 
-### Manual Deployment
+### Create Dataflow Template
 
 ```bash
-python pipelines/salesforce_streaming_cdc.py \
-    --config=config/salesforce_cdc_config.yaml \
-    --runner=DataflowRunner \
-    --project=my-project \
-    --region=us-central1 \
-    --job_name=salesforce-cdc-streaming \
-    --staging_location=gs://my-bucket/staging \
-    --temp_location=gs://my-bucket/temp \
-    --num_workers=2 \
-    --max_num_workers=10 \
-    --streaming
+./scripts/deploy_cdc_pipeline.sh prod --template
 ```
 
-## Testing
-
-### Generate and Publish Test Events
+### Dry Run (Preview)
 
 ```bash
-# Generate test events
-python -m src.salesforce.cdc_event_simulator \
-    --object-type Account \
-    --count 1000 \
-    --preload 100 \
-    --output test_events.json
-
-# Publish to Pub/Sub
-python -m src.salesforce.cdc_publisher \
-    --project-id my-project \
-    --topic-name stream-processing \
-    --object-type Account \
-    --count 1000 \
-    --rate-limit 100
-```
-
-### Continuous Testing
-
-```bash
-# Continuous event generation
-python -m src.salesforce.cdc_publisher \
-    --project-id my-project \
-    --topic-name stream-processing \
-    --object-type Account \
-    --count 100 \
-    --continuous \
-    --interval 10
+./scripts/deploy_cdc_pipeline.sh dev --dry-run
 ```
 
 ## Monitoring
 
-### Pipeline Metrics
+### Key Metrics
 
-1. **Event Throughput**
+1. **Throughput**:
    - Events received per second
    - Events processed per second
-   - Processing latency
+   - Records inserted per second
 
-2. **Data Quality**
+2. **Latency**:
+   - Event ingestion latency
+   - Processing latency
+   - End-to-end latency
+
+3. **Data Quality**:
    - Validation success rate
-   - Validation error rate by type
+   - Error rate by type
    - Alert frequency
 
-3. **BigQuery Writes**
-   - Records inserted per second
-   - Failed writes
-   - Write latency
+4. **SCD Type 2**:
+   - History updates per hour
+   - Record versions created
+   - Processing batch size
 
-4. **History Updates**
-   - SCD Type 2 updates per hour
-   - History records created
-   - Change detection rate
+### Cloud Monitoring Queries
 
-### View Pipeline Status
+```sql
+-- Event throughput
+fetch dataflow_job
+| metric 'dataflow.job/user_counter'
+| filter resource.job_name =~ 'salesforce-cdc-.*'
+| group_by 1m, [value_user_counter_mean: mean(value.user_counter)]
+
+-- Data quality error rate
+fetch dataflow_job
+| metric 'dataflow.job/user_counter'
+| filter resource.job_name =~ 'salesforce-cdc-.*'
+    && metric.metric_name = 'validation_errors'
+```
+
+### Logs
+
+View pipeline logs in Cloud Logging:
+
+```
+resource.type="dataflow_step"
+resource.labels.job_name=~"salesforce-cdc-.*"
+severity>=ERROR
+```
+
+## Data Flow
+
+### Real-time Path
+
+1. Event arrives at Pub/Sub subscription
+2. Parse JSON event (10ms)
+3. Validate event structure (5ms)
+4. Extract record data (2ms)
+5. Route by object type (1ms)
+6. Window into 10-second micro-batches
+7. Stream insert to BigQuery raw table (100-500ms)
+
+**Total latency**: ~1-2 seconds
+
+### History Path
+
+1. Event arrives at Pub/Sub subscription
+2. Parse and validate (same as real-time)
+3. Route by object type
+4. Window into 1-hour batches
+5. Group events by record ID
+6. Process SCD Type 2 logic:
+   - Get current record from history table
+   - Detect changes
+   - Close current record (set `valid_to`, `is_current=FALSE`)
+   - Insert new history record
+7. Batch insert to BigQuery history table
+
+**Processing**: Hourly at window close
+
+## BigQuery Schema
+
+### Raw Tables
+
+```sql
+CREATE TABLE raw_accounts (
+  -- Salesforce fields
+  id STRING,
+  name STRING,
+  type STRING,
+  industry STRING,
+  annual_revenue INT64,
+  phone STRING,
+  -- ... more fields
+  
+  -- CDC metadata
+  ingestion_timestamp TIMESTAMP,
+  source STRING,
+  _cdc_event_id STRING,
+  _cdc_event_type STRING,
+  _cdc_event_timestamp TIMESTAMP
+);
+```
+
+### History Tables (SCD Type 2)
+
+```sql
+CREATE TABLE accounts_history (
+  -- Salesforce fields
+  id STRING,
+  name STRING,
+  type STRING,
+  -- ... more fields
+  
+  -- SCD Type 2 fields
+  valid_from TIMESTAMP,
+  valid_to TIMESTAMP,
+  is_current BOOLEAN,
+  change_type STRING,  -- INSERT, UPDATE, DELETE
+  changed_fields ARRAY<STRING>,
+  
+  -- CDC metadata
+  _cdc_event_id STRING,
+  _cdc_event_timestamp TIMESTAMP,
+  ingestion_timestamp TIMESTAMP
+);
+```
+
+## Troubleshooting
+
+### High Error Rate
+
+1. Check validation errors:
+   ```bash
+   gcloud pubsub subscriptions pull data-quality-alerts-sub --limit=10
+   ```
+
+2. Review validation statistics in logs
+
+3. Adjust validation rules if needed
+
+### Processing Lag
+
+1. Check Dataflow autoscaling:
+   ```bash
+   gcloud dataflow jobs describe <JOB_ID>
+   ```
+
+2. Increase max workers if needed
+
+3. Review worker CPU/memory usage
+
+### SCD Type 2 Issues
+
+1. Check BigQuery history table permissions
+2. Verify CDC events have required fields
+3. Review `process_hourly_changes` logs
+4. Check for BigQuery quota limits
+
+### Dead Letter Queue
+
+Failed events are published to `cdc-dead-letter` topic:
 
 ```bash
-# List running jobs
-gcloud dataflow jobs list \
-    --region=us-central1 \
-    --filter="name~salesforce-cdc" \
-    --status=active
+gcloud pubsub subscriptions pull cdc-dead-letter-sub --limit=10
+```
 
-# View job details
-gcloud dataflow jobs describe JOB_ID \
-    --region=us-
+## Performance Tuning
+
+### Dataflow Settings
+
+```bash
+--num_workers=5                    # Initial workers
+--max_num_workers=20               # Maximum autoscaling
+--machine_type=n1-standard-4       # Worker machine type
+--disk_size_gb=50                  # Worker disk size
+--autoscaling_algorithm=THROUGHPUT_BASED
+```
+
+### BigQuery Optimization
+
+1. **Partition** raw tables by `ingestion_timestamp`
+2. **Cluster** by `id` for faster lookups
+3. **Partition** history tables by `valid_from`
+4. **Cluster** by `id, is_current`
+
+### Pub/Sub Tuning
+
+```yaml
+pubsub:
+  ack_deadline_seconds: 60  # Processing time allowance
+  max_messages: 1000        # Batch size
+```
+
+## Best Practices
+
+1. **Monitor data quality metrics** continuously
+2. **Set up alerts** for error rate thresholds
+3. **Review dead letter queue** regularly
+4. **Optimize BigQuery costs** with partitioning/clustering
+5. **Test configuration changes** in dev first
+6. **Use templates** for production deployments
+7. **Version control** pipeline configuration
+8. **Document schema changes** in history tables
+
+## Related Documentation
+
+- [Batch Pipeline Documentation](batch_pipeline.md)
+- [Salesforce Data Generator](../src/salesforce/data_generator.py)
+- [CDC Event Simulator](../src/salesforce/cdc_event_simulator.py)
+- [SCD Type 2 Handler](../pipelines/utils/scd_type2_handler.py)
+- [CDC Validators](../pipelines/utils/cdc_validators.py)

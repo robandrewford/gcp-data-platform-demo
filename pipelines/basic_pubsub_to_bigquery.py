@@ -20,13 +20,9 @@ import argparse
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any
 
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions
-from apache_beam.options.pipeline_options import SetupOptions
-
-from src.core.config import config
+from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions
 from src.core.logging import setup_logging
 
 
@@ -157,7 +153,7 @@ def run_pipeline(
         )
 
         # Log pipeline metrics
-        pipeline_metrics = (
+        (
             validated_data
             | 'Count Valid Records' >> beam.combiners.Count.Globally()
             | 'Log Metrics' >> beam.Map(lambda count: logging.info(f"Processed {count} valid records"))
